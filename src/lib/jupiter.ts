@@ -28,7 +28,14 @@ export async function jup<T>(path: string, params: Record<string, string | numbe
 
   for (let attempt = 0; ; attempt++) {
     await takeSlot();
-    const res = await fetch(url, { headers: KEY ? { "x-api-key": KEY } : {} });
+    // A stalled connection would otherwise hang the caller forever; time out and retry instead.
+    let res: Response;
+    try {
+      res = await fetch(url, { headers: KEY ? { "x-api-key": KEY } : {}, signal: AbortSignal.timeout(20_000) });
+    } catch (e) {
+      if (attempt < 6) continue;
+      throw e;
+    }
     if (res.ok) return (await res.json()) as T;
     if ((res.status === 429 || res.status >= 500) && attempt < 6) {
       // On 429 Jupiter says when the window resets; wait until then (capped) and push the queue back too.

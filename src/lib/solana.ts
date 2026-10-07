@@ -8,6 +8,7 @@ async function rpc<T>(method: string, params: unknown[]): Promise<T> {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+    signal: AbortSignal.timeout(20_000),
   });
   const j = await res.json();
   if (j.error) throw new Error(`${method}: ${j.error.message}`);
