@@ -37,12 +37,12 @@ async function Wallet({ params }: { params: PageProps<"/wallet/[addr]">["params"
   // Wallets outside our indexed set are fetched on first visit.
   if (!(await walletExists(addr))) {
     try {
-      await indexWallet(addr);
+      await indexWallet(addr, { quick: true });
     } catch {
       notFound();
     }
   }
-  const { profile, byCategory, positions, history, pnlSeries } = await walletSummary(addr);
+  const { profile, byCategory, positions, history, pnlSeries, complete } = await walletSummary(addr);
   if (!profile) notFound();
 
   const resolved = Number(profile.correct) + Number(profile.wrong);
@@ -73,6 +73,12 @@ async function Wallet({ params }: { params: PageProps<"/wallet/[addr]">["params"
           </Link>
         </div>
       </div>
+
+      {!complete && (
+        <p className="rounded-xl border border-violet bg-violet-bg px-4 py-3 text-sm text-violet">
+          Showing this wallet&apos;s recent trades. Its full history is being indexed; totals above come from Jupiter.
+        </p>
+      )}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {stats.map((s) => (

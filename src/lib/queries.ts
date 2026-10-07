@@ -65,7 +65,8 @@ export async function walletSummary(owner: string) {
     order by h.ts desc limit 200`;
   const pnlSeries = await sql`select date_trunc('day', ts) as day, sum(realized_pnl_usd)::float8 as pnl
     from history where owner = ${owner} and realized_pnl_usd is not null group by 1 order by 1`;
-  return { profile, byCategory, positions, history, pnlSeries };
+  const [w] = await sql`select history_at from wallets where owner = ${owner}`;
+  return { profile, byCategory, positions, history, pnlSeries, complete: !!w?.history_at };
 }
 
 export async function overview() {

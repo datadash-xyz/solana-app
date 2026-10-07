@@ -5,7 +5,11 @@ import { saveEvents } from "./save";
 
 const num = (s: string | null | undefined) => (s === null || s === undefined || s === "" ? null : Number(s));
 
-export async function indexWallet(owner: string) {
+// `quick` is for a first page visit: fetch only recent history and a few event lookups so the
+// page loads fast; the wallet stays flagged (history_at null) for the background indexer to finish.
+export async function indexWallet(owner: string, { quick = false } = {}) {
+  const maxHistory = quick ? 1000 : 5000;
+  const maxEventFetch = quick ? 25 : Infinity;
   const p = await jup<Profile>(`/profiles/${owner}`);
   await sql`insert into profiles ${sql({
     owner,
@@ -30,7 +34,7 @@ export async function indexWallet(owner: string) {
   });
 
   // Cap very active (bot) wallets; profile totals still come from Jupiter.
-  const history = await jupAll<HistoryItem>("/history", { ownerPubkey: owner }, 100, 5000);
+  const history = await jupAll<HistoryItem>("/history", { ownerPubkey: owner }, 200, maxHistory);
   // Pages can overlap when new events arrive mid-crawl, so de-duplicate by id.
   const hRows = [...new Map(history.map((h) => [h.id, h])).values()].map((h) => ({
     id: h.id, owner, event_type: h.eventType, signature: h.signature, slot: num(h.slot), ts: ts(h.timestamp),
@@ -48,7 +52,7 @@ export async function indexWallet(owner: string) {
   const missing = await sql`select distinct event_id from (
       select event_id from history where owner = ${owner} union select event_id from positions where owner = ${owner}) x
     where event_id is not null and not exists (select 1 from events e where e.event_id = x.event_id)`;
-  for (const { event_id } of missing) {
+  for (const { event_id } of missing.slice(0, maxEventFetch)) {
     try {
       await saveEvents([await jup<JEvent>(`/events/${encodeURIComponent(event_id)}`, { includeMarkets: true })]);
     } catch {
@@ -56,7 +60,9 @@ export async function indexWallet(owner: string) {
     }
   }
 
-  await sql`insert into wallets (owner, source, profiled_at, history_at) values (${owner}, 'manual', now(), now())
-    on conflict (owner) do update set profiled_at = now(), history_at = now()`;
+  const complete = !quick || (history.length < maxHistory && missing.length <= maxEventFetch);
+  const historyAt = complete ? new Date() : null;
+  await sql`insert into wallets (owner, source, profiled_at, history_at) values (${owner}, ${quick ? "visit" : "manual"}, now(), ${historyAt})
+    on conflict (owner) do update set profiled_at = now(), history_at = ${historyAt}`;
   return { positions: posRows.length, history: hRows.length };
 }
