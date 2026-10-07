@@ -20,9 +20,18 @@ for (let k = 0; k < sigs.length; k += 256) {
   const res = await verifySignatures(batch);
   const vals = batch.map((s) => ({ signature: s, ok: res.get(s)?.ok ?? false, slot: res.get(s)?.slot ?? null }));
   ok += vals.filter((v) => v.ok).length;
-  await sql`update history h set verified_at = now(), verified_ok = v.ok::boolean
-    from (values ${sql(vals.map((v) => [v.signature, String(v.ok)]))}) as v(signature, ok)
-    where h.signature = v.signature`;
+  // Neon occasionally resets a connection mid-run; retry the write rather than losing the batch.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await sql`update history h set verified_at = now(), verified_ok = v.ok::boolean
+        from (values ${sql(vals.map((v) => [v.signature, String(v.ok)]))}) as v(signature, ok)
+        where h.signature = v.signature`;
+      break;
+    } catch (e) {
+      if (attempt >= 3) throw e;
+      await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+    }
+  }
   console.log(`${Math.min(k + 256, sigs.length)}/${sigs.length} checked, ${ok} confirmed`);
 }
 await sql.end();
