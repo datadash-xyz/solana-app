@@ -35,6 +35,7 @@ export async function jup<T>(path: string, params: Record<string, string | numbe
       const reset = Number(res.headers.get("x-ratelimit-reset")) * 1000;
       const wait = res.status === 429 && reset > Date.now() ? Math.min(60_000, reset - Date.now() + 250) : Math.min(30_000, 1000 * 2 ** attempt);
       nextSlot = Math.max(nextSlot, Date.now() + wait);
+      if (process.env.JUP_DEBUG) console.error(`[jup] ${res.status} ${url.pathname} wait ${wait}ms`, res.headers.get("x-ratelimit-current"), res.headers.get("x-ratelimit-remaining"));
       await sleep(wait);
       continue;
     }
@@ -59,7 +60,8 @@ export async function jupAll<T>(
     const page = await jup<Page<T>>(path, { ...params, start, end: start + pageSize });
     out.push(...page.data);
     if (onPage) await onPage(page.data, out.length);
-    if (!page.pagination?.hasNext) break;
+    // /history keeps reporting hasNext with empty pages once it runs out, so an empty page ends the walk.
+    if (!page.pagination?.hasNext || page.data.length === 0) break;
     // Some endpoints (e.g. /history) return short pages; `pagination.end` is where the next page starts.
     const next = page.pagination.end;
     start = next > start ? next : start + pageSize;
@@ -153,7 +155,14 @@ export type HistoryItem = {
   feeUsd: string | null;
   realizedPnl: string | null;
   payoutAmountUsd: string | null;
-  eventMetadata?: { title?: string } | null;
+  // History rows carry the event's and market's metadata, so no extra lookups are needed.
+  eventMetadata?: {
+    eventId?: string; title?: string; imageUrl?: string; closeTime?: number | string;
+    category?: string | null; subcategory?: string | null; tags?: string[] | null;
+  } | null;
+  marketMetadata?: {
+    marketId?: string; eventId?: string; provider?: string; title?: string; status?: string; result?: string | null; closeTime?: number | null;
+  } | null;
 };
 
 export type Trade = {

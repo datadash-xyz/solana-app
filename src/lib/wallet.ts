@@ -1,7 +1,7 @@
 // Fetches one wallet's profile, positions and history from Jupiter and stores them.
 import { sql, ts } from "./db";
 import { jup, jupAll, usd, type HistoryItem, type JEvent, type Position, type Profile } from "./jupiter";
-import { saveEvents } from "./save";
+import { saveEvents, saveMetaFromHistory } from "./save";
 
 const num = (s: string | null | undefined) => (s === null || s === undefined || s === "" ? null : Number(s));
 
@@ -10,7 +10,7 @@ const num = (s: string | null | undefined) => (s === null || s === undefined || 
 export async function indexWallet(owner: string, { quick = false } = {}) {
   // Each history page is one request and Jupiter's free plan allows ~1 request/second, so a first visit stays small.
   const maxHistory = quick ? 200 : 5000;
-  const maxEventFetch = quick ? 2 : Infinity;
+  const maxEventFetch = quick ? 2 : 20;
   const p = await jup<Profile>(`/profiles/${owner}`);
   await sql`insert into profiles ${sql({
     owner,
@@ -49,7 +49,9 @@ export async function indexWallet(owner: string, { quick = false } = {}) {
       realized_pnl_usd = excluded.realized_pnl_usd, payout_usd = excluded.payout_usd, title = excluded.title`;
   }
 
-  // Fetch metadata (category, title) for events this wallet traded that we haven't stored yet.
+  await saveMetaFromHistory(history);
+
+  // Positions can reference events with no history yet; look those up directly (a few requests at most).
   const missing = await sql`select distinct event_id from (
       select event_id from history where owner = ${owner} union select event_id from positions where owner = ${owner}) x
     where event_id is not null and not exists (select 1 from events e where e.event_id = x.event_id)`;

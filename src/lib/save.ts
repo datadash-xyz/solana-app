@@ -1,6 +1,6 @@
 // Upserts shared by the indexer scripts.
 import { sql, ts } from "./db";
-import { usd, type JEvent } from "./jupiter";
+import { usd, type HistoryItem, type JEvent } from "./jupiter";
 
 // Map each provider's category names onto Datadash's categories.
 const CATEGORY: Record<string, string> = {
@@ -48,4 +48,38 @@ export async function saveEvents(events: JEvent[], provider?: string) {
         result = excluded.result, buy_yes = excluded.buy_yes, buy_no = excluded.buy_no, close_time = excluded.close_time, updated_at = now()`;
   }
   return uniq.length;
+}
+
+// Stores event/market metadata that arrives embedded in history rows. Only fills gaps:
+// rows already loaded from /events (with volume and live pricing) are left untouched.
+export async function saveMetaFromHistory(items: HistoryItem[]) {
+  const ev = new Map<string, Record<string, unknown>>();
+  const mk = new Map<string, Record<string, unknown>>();
+  for (const h of items) {
+    const e = h.eventMetadata;
+    const eventId = e?.eventId ?? h.eventId;
+    if (e && eventId && !ev.has(eventId)) {
+      const close = e.closeTime === undefined || e.closeTime === null || e.closeTime === "" ? null
+        : typeof e.closeTime === "number" || /^\d+$/.test(String(e.closeTime)) ? ts(e.closeTime) : new Date(String(e.closeTime));
+      ev.set(eventId, {
+        event_id: eventId, provider: h.marketMetadata?.provider ?? null,
+        category: normCategory(e.category), category_raw: e.category ?? null, subcategory: e.subcategory ?? null,
+        title: e.title ?? null, slug: null, image_url: e.imageUrl ?? null, close_time: close,
+        volume_usd: null, is_active: null, tags: e.tags ?? [],
+      });
+    }
+    const m = h.marketMetadata;
+    const marketId = m?.marketId ?? h.marketId;
+    if (m && marketId && !mk.has(marketId)) {
+      mk.set(marketId, {
+        market_id: marketId, event_id: m.eventId ?? eventId ?? null, provider: m.provider ?? null, title: m.title ?? null,
+        status: m.status ?? null, result: m.result ?? null, buy_yes: null, buy_no: null, close_time: ts(m.closeTime ?? null),
+      });
+    }
+  }
+  const evRows = [...ev.values()], mkRows = [...mk.values()];
+  for (let i = 0; i < evRows.length; i += 500) await sql`insert into events ${sql(evRows.slice(i, i + 500))} on conflict (event_id) do nothing`;
+  for (let i = 0; i < mkRows.length; i += 500) await sql`insert into markets ${sql(mkRows.slice(i, i + 500))} on conflict (market_id) do update
+    set status = excluded.status, result = excluded.result`;
+  return { events: evRows.length, markets: mkRows.length };
 }
