@@ -76,7 +76,7 @@ async function Wallet({ params }: { params: PageProps<"/wallet/[addr]">["params"
 
       {!complete && (
         <p className="rounded-xl border border-violet bg-violet-bg px-4 py-3 text-sm text-violet">
-          Showing this wallet&apos;s recent trades. Its full history is being indexed; totals above come from Jupiter.
+          Showing this wallet&apos;s recent trades. Its full history is being indexed. Headline totals come from Jupiter.
         </p>
       )}
 
