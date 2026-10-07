@@ -8,8 +8,9 @@ const num = (s: string | null | undefined) => (s === null || s === undefined || 
 // `quick` is for a first page visit: fetch only recent history and a few event lookups so the
 // page loads fast; the wallet stays flagged (history_at null) for the background indexer to finish.
 export async function indexWallet(owner: string, { quick = false } = {}) {
-  const maxHistory = quick ? 1000 : 5000;
-  const maxEventFetch = quick ? 25 : Infinity;
+  // Each history page is one request and Jupiter's free plan allows ~1 request/second, so a first visit stays small.
+  const maxHistory = quick ? 200 : 5000;
+  const maxEventFetch = quick ? 2 : Infinity;
   const p = await jup<Profile>(`/profiles/${owner}`);
   await sql`insert into profiles ${sql({
     owner,

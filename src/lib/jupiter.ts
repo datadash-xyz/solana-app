@@ -3,11 +3,21 @@
 
 const BASE = "https://api.jup.ag/prediction/v1";
 const KEY = process.env.JUPITER_API_KEY || "";
-// Without a key the gateway rate-limits hard, so we space requests out.
-const MIN_INTERVAL_MS = KEY ? 120 : 1100;
+// Jupiter limits requests per organisation: keyless 0.5 RPS, free key 1 RPS, paid plans more.
+// Set JUPITER_RPS to your plan's rate; every process sharing the key shares this budget.
+const RPS = Number(process.env.JUPITER_RPS) || (KEY ? 1 : 0.5);
+const MIN_INTERVAL_MS = Math.ceil(1000 / RPS) + 20;
 
-let last = 0;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Reserves the next request slot synchronously, so concurrent callers queue instead of bursting.
+let nextSlot = 0;
+async function takeSlot() {
+  const now = Date.now();
+  const at = Math.max(now, nextSlot);
+  nextSlot = at + MIN_INTERVAL_MS;
+  if (at > now) await sleep(at - now);
+}
 
 export const usd = (micro: string | number | null | undefined) =>
   micro === null || micro === undefined || micro === "" ? null : Number(micro) / 1e6;
@@ -17,14 +27,15 @@ export async function jup<T>(path: string, params: Record<string, string | numbe
   for (const [k, v] of Object.entries(params)) if (v !== undefined) url.searchParams.set(k, String(v));
 
   for (let attempt = 0; ; attempt++) {
-    const wait = last + MIN_INTERVAL_MS - Date.now();
-    if (wait > 0) await sleep(wait);
-    last = Date.now();
-
+    await takeSlot();
     const res = await fetch(url, { headers: KEY ? { "x-api-key": KEY } : {} });
     if (res.ok) return (await res.json()) as T;
     if ((res.status === 429 || res.status >= 500) && attempt < 6) {
-      await sleep(Math.min(30_000, 1000 * 2 ** attempt));
+      // On 429 Jupiter says when the window resets; wait until then (capped) and push the queue back too.
+      const reset = Number(res.headers.get("x-ratelimit-reset")) * 1000;
+      const wait = res.status === 429 && reset > Date.now() ? Math.min(60_000, reset - Date.now() + 250) : Math.min(30_000, 1000 * 2 ** attempt);
+      nextSlot = Math.max(nextSlot, Date.now() + wait);
+      await sleep(wait);
       continue;
     }
     throw new Error(`Jupiter ${res.status} ${url.pathname}${url.search}: ${(await res.text()).slice(0, 200)}`);

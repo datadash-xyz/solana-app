@@ -1,11 +1,11 @@
 // Polls Jupiter's global trade feed (latest 20 trades) and keeps every trade we see.
-// New traders are added to the wallet universe. Usage: tsx scripts/poll-trades.mts [--every 15] [--once]
+// New traders are added to the wallet universe. Usage: tsx scripts/poll-trades.mts [--every 30] [--once]
 import "dotenv/config";
 import { sql, ts } from "../src/lib/db";
 import { jup, usd, type Trade } from "../src/lib/jupiter";
 
 const i = process.argv.indexOf("--every");
-const every = (i > -1 ? Number(process.argv[i + 1]) : 15) * 1000;
+const every = (i > -1 ? Number(process.argv[i + 1]) : 30) * 1000;
 const once = process.argv.includes("--once");
 
 async function poll() {
