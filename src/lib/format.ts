@@ -24,3 +24,17 @@ export function ago(d: Date | string | null | undefined) {
 }
 
 export const isSolanaAddress = (s: string) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(s);
+
+export function duration(seconds: number | null | undefined) {
+  if (seconds === null || seconds === undefined || !isFinite(seconds)) return "–";
+  const m = Math.round(seconds / 60);
+  if (m < 60) return `${Math.max(1, m)}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ${m % 60}m`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d ${h % 24}h`;
+  return `${Math.floor(d / 7)}w ${d % 7}d`;
+}
+
+export const pct = (v: number | null | undefined, signed = false) =>
+  v === null || v === undefined ? "–" : `${signed && v > 0 ? "+" : ""}${v.toFixed(1)}%`;

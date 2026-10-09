@@ -12,9 +12,12 @@
     "index:events": "tsx scripts/index-events.mts",
     "index:wallets": "tsx scripts/index-wallets.mts",
     "poll:trades": "tsx scripts/poll-trades.mts",
-    "verify:onchain": "tsx scripts/verify-onchain.mts"
+    "verify:onchain": "tsx scripts/verify-onchain.mts",
+    "db:refresh": "tsx scripts/refresh.mts"
   },
   "dependencies": {
+    "@wallet-standard/app": "^1.1.1",
+    "@wallet-standard/base": "^1.1.1",
     "dotenv": "^18.0.6",
     "next": "16.4.0",
     "postgres": "^3.4.9",

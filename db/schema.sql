@@ -138,3 +138,56 @@ create index if not exists trades_ts on trades (ts desc);
 
 -- Raw provider category (Kalshi/Forecast/Polymarket use different names); `category` holds the normalized one.
 alter table events add column if not exists category_raw text;
+
+-- One row per position account, rebuilt from history. Powers ROI, profit factor, hold time,
+-- closed positions and market holders. Refresh after indexing: npm run db:refresh
+-- position_stats_live computes on the fly (used for single-wallet pages, so new wallets show up at once);
+-- position_stats materializes it for the leaderboard.
+drop materialized view if exists position_stats;
+drop view if exists position_stats_live;
+create view position_stats_live as
+select
+  h.owner,
+  h.position_pubkey,
+  max(h.market_id) as market_id,
+  coalesce(max(h.event_id), max(m.event_id)) as event_id,
+  coalesce(max(e.category), max(e2.category), 'Other') as category,
+  max(h.title) as title,
+  max(m.title) as market_title,
+  bool_or(h.is_yes) filter (where h.event_type = 'order_filled' and h.is_buy) as is_yes,
+  min(h.ts) filter (where h.event_type = 'order_filled' and h.is_buy) as opened_at,
+  max(h.ts) filter (where h.event_type in ('payout_claimed', 'position_lost') or (h.event_type = 'order_filled' and not h.is_buy)) as closed_at,
+  coalesce(sum(h.total_cost_usd) filter (where h.event_type = 'order_filled' and h.is_buy), 0)::float8 as cost_usd,
+  coalesce(sum(h.contracts) filter (where h.event_type = 'order_filled' and h.is_buy), 0)::float8 as contracts,
+  count(*) filter (where h.event_type = 'order_filled')::int as fills,
+  sum(h.realized_pnl_usd)::float8 as realized_pnl,
+  coalesce(sum(h.payout_usd) filter (where h.event_type = 'payout_claimed'), 0)::float8 as payout_usd,
+  bool_or(h.event_type = 'payout_claimed') as won,
+  bool_or(h.event_type = 'position_lost') as lost,
+  (array_agg(h.signature order by h.ts desc) filter (where h.event_type in ('payout_claimed', 'position_lost', 'order_filled')))[1] as last_signature,
+  bool_and(h.verified_ok) filter (where h.event_type in ('payout_claimed', 'position_lost', 'order_filled')) as verified
+from history h
+left join markets m on m.market_id = h.market_id
+left join events e on e.event_id = h.event_id
+left join events e2 on e2.event_id = m.event_id
+where h.position_pubkey is not null and h.position_pubkey <> ''
+group by h.owner, h.position_pubkey;
+create materialized view position_stats as select * from position_stats_live;
+create unique index position_stats_pk on position_stats (position_pubkey);
+create index position_stats_owner on position_stats (owner);
+create index position_stats_closed on position_stats (closed_at);
+create index position_stats_market on position_stats (market_id);
+
+-- Polymarket smart money (Datadash top-1,000 wallets) snapshots, for "same market, two chains".
+create table if not exists polymarket_smart_money (
+  market_id      text primary key,          -- Jupiter-style id, e.g. POLY-1163699
+  event_id       text,
+  title          text,
+  outcome        text,
+  smart_yes_usd  numeric,
+  smart_no_usd   numeric,
+  smart_odds     numeric,                    -- 0..1, dollar-weighted Yes share of top traders
+  market_price   numeric,                    -- 0..1 at snapshot time
+  traders        int,
+  snapshot_at    timestamptz not null default now()
+);

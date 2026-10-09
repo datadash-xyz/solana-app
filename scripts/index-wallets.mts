@@ -49,4 +49,7 @@ for (const id of missing) {
     console.error(`event ${id}: ${(e as Error).message.slice(0, 120)}`);
   }
 }
+// Rebuild the leaderboard snapshot so new history shows up in rankings.
+await sql`refresh materialized view concurrently position_stats`;
+console.log("position_stats refreshed");
 await sql.end();
