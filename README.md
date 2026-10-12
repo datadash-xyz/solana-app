@@ -32,21 +32,53 @@ Snapshot on Oct 12, 2026: **626 Solana traders** indexed, **38,282 positions** r
 ## Architecture
 
 ```
-Jupiter Prediction API ──► indexer scripts (TypeScript, tsx) ──► Postgres (Neon) ──► Next.js 16 on Vercel (fra1)
-  /leaderboards  → wallet universe (9 boards × top 100)              │                 leaderboard · wallet · activity
-  /profiles, /positions, /history (with signatures)                  │                 markets · two chains
-  /events        → categories, titles, markets                       │
-  /trades        → live feed (polled), new wallets                   │
-                                                                     │
-Helius RPC (Solana) ──► verify-onchain: every signature ─────────────┘
-Datadash MCP (Polymarket smart money) ──► seed-polymarket-snapshot ──┘
+                    connectors                       Temporal pipeline                       storage            app
+Jupiter Prediction API ─┐                ┌─ leaderboardSync      (hourly schedule)
+Solana RPC (Helius) ────┼─► jobs ◄───────┼─ eventsSync           (every 6h)          ──►  Postgres  ──►  Next.js 16 on Vercel (fra1)
+Postgres ───────────────┘  (one impl.    ├─ walletBackfill       (every 6h, batched)        (Neon)        leaderboard · wallet · activity
+                            per step)    ├─ onchainVerification  (hourly)                                 markets · two chains
+                                         ├─ tradeFeed            (long-running poller)
+                                         └─ fullRefresh          (all of the above as child workflows)
+Datadash MCP (Polymarket smart money) ──► seed-polymarket-snapshot ──► Postgres
 ```
 
-- `src/lib/jupiter.ts`: API client. Converts micro-USD, paces requests to the plan's rate limit, retries on 429 using `x-ratelimit-reset`, and times out stalled requests.
+- `src/pipeline/connectors/`: one connector per external system, each with a `health()` check.
+  - `jupiter.ts`: Jupiter Prediction API (leaderboards, events, profiles, positions, history, trade feed).
+  - `solana.ts`: Solana JSON-RPC via Helius (`getSignatureStatuses`, `getTransaction`, `getSlot`).
+  - `postgres.ts`: the sink, plus the queries that pick work (stale wallets, unverified signatures) and refresh views.
+- `src/pipeline/jobs.ts`: each pipeline step, implemented once. The CLI scripts and the Temporal activities both call these.
+- `src/pipeline/activities.ts`, `workflows.ts`, `temporal.ts`: the Temporal layer (see [Data pipeline](#data-pipeline-temporal)).
+- `src/lib/jupiter.ts`: API client underneath the Jupiter connector. Converts micro-USD, paces requests to the plan's rate limit, retries on 429 using `x-ratelimit-reset`, and times out stalled requests.
 - `src/lib/wallet.ts`: indexes one wallet (profile, positions, full history) and stores event metadata embedded in history rows.
-- `src/lib/solana.ts`: signature checks and transaction lookups over Solana RPC.
 - `src/lib/queries.ts`: every read the pages make.
 - `db/schema.sql`: tables plus `position_stats`, one row per position account rebuilt from history. It exists as a live view (`position_stats_live`, used on trader pages so new wallets appear at once) and a materialized view (`position_stats`, used by the leaderboard).
+
+## Data pipeline (Temporal)
+
+Indexing runs as [Temporal](https://temporal.io) workflows, so every step is retried, observable and resumable.
+
+| Workflow | What it does | Runs |
+|---|---|---|
+| `leaderboardSync` | Snapshots Jupiter's 9 leaderboards and grows the wallet universe | Schedule, hourly |
+| `eventsSync` | Events, markets and categories per provider (Polymarket, Kalshi, Jupiter Forecast) | Schedule, every 6h |
+| `walletBackfill` | Re-indexes stale wallets in batches. One activity per wallet, retried on its own; parallel lanes share the Jupiter rate budget; **continues-as-new** after each batch so history stays small; wallets that exhaust retries are skipped for the rest of the run. Ends by refreshing `position_stats`. | Schedule, every 6h |
+| `onchainVerification` | Confirms every unchecked trade signature on Solana, in rounds | Schedule, hourly |
+| `tradeFeed` | Long-running poller for Jupiter's trade feed (latest 20 only). `stats` query, `stop` signal, continues-as-new every 500 polls | Started once |
+| `fullRefresh` | Checks every connector's health, then runs the four stages above as **child workflows** | On demand |
+
+Activity policies: short calls get a 2-minute timeout and up to 5 retries with backoff; paging calls get 45 minutes, a 3-minute **heartbeat timeout** (activities heartbeat as pages arrive) and 3 retries. The worker keeps activity concurrency at 4 because all Jupiter calls in the process share one request-rate budget.
+
+```bash
+temporal server start-dev            # local Temporal (or set TEMPORAL_ADDRESS / TEMPORAL_NAMESPACE / TEMPORAL_API_KEY for Temporal Cloud)
+npm run pipeline:health              # check every connector
+npm run pipeline:worker              # run the worker (keep running)
+npm run pipeline:schedules           # create / update the four schedules
+npx tsx scripts/pipeline.mts start-trade-feed
+npx tsx scripts/pipeline.mts run walletBackfill '{"batchSize":10,"maxBatches":1}'
+npm run pipeline:e2e                 # end-to-end test on a throwaway local Temporal server
+```
+
+The `index:*`, `poll:trades` and `verify:onchain` scripts call the same jobs without Temporal, for one-off runs.
 
 ### How the numbers are computed
 
@@ -73,7 +105,7 @@ cp .env.example .env   # fill in DATABASE_URL, JUPITER_API_KEY, HELIUS_API_KEY
 npm run db:migrate
 ```
 
-Load data (in this order):
+Load data with the [Temporal pipeline](#data-pipeline-temporal), or with the one-off scripts (in this order):
 
 ```bash
 npm run index:leaderboards   # Jupiter's boards → wallet universe + platform totals
@@ -95,6 +127,7 @@ Optional: `npx tsx scripts/seed-polymarket-snapshot.mts` loads the Polymarket sm
 | `poll:trades [--every 30]` | Poll the global trade feed |
 | `verify:onchain [--limit N]` | Verify stored signatures via Solana RPC |
 | `db:refresh` | Rebuild the `position_stats` materialized view |
+| `pipeline:*` | Temporal worker, health, schedules and end-to-end test (see above) |
 
 ### Deploying
 

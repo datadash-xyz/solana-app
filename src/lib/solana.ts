@@ -3,7 +3,7 @@
 
 const RPC = `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY ?? ""}`;
 
-async function rpc<T>(method: string, params: unknown[]): Promise<T> {
+export async function rpc<T>(method: string, params: unknown[]): Promise<T> {
   const res = await fetch(RPC, {
     method: "POST",
     headers: { "content-type": "application/json" },

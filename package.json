@@ -13,9 +13,17 @@
     "index:wallets": "tsx scripts/index-wallets.mts",
     "poll:trades": "tsx scripts/poll-trades.mts",
     "verify:onchain": "tsx scripts/verify-onchain.mts",
-    "db:refresh": "tsx scripts/refresh.mts"
+    "db:refresh": "tsx scripts/refresh.mts",
+    "pipeline:worker": "tsx scripts/pipeline.mts worker",
+    "pipeline:health": "tsx scripts/pipeline.mts health",
+    "pipeline:schedules": "tsx scripts/pipeline.mts schedules",
+    "pipeline:e2e": "tsx scripts/pipeline-e2e.mts"
   },
   "dependencies": {
+    "@temporalio/activity": "^1.24.0",
+    "@temporalio/client": "^1.24.0",
+    "@temporalio/worker": "^1.24.0",
+    "@temporalio/workflow": "^1.24.0",
     "@wallet-standard/app": "^1.1.1",
     "@wallet-standard/base": "^1.1.1",
     "dotenv": "^18.0.6",
@@ -26,6 +34,7 @@
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
+    "@temporalio/testing": "^1.24.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

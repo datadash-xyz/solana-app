@@ -1,17 +1,20 @@
 // Fetches one wallet's profile, positions and history from Jupiter and stores them.
 import { sql, ts } from "./db";
-import { jup, jupAll, usd, type HistoryItem, type JEvent, type Position, type Profile } from "./jupiter";
+import { usd } from "./jupiter";
+import { connectors } from "../pipeline/connectors";
 import { saveEvents, saveMetaFromHistory } from "./save";
 
 const num = (s: string | null | undefined) => (s === null || s === undefined || s === "" ? null : Number(s));
 
 // `quick` is for a first page visit: fetch only recent history and a few event lookups so the
 // page loads fast; the wallet stays flagged (history_at null) for the background indexer to finish.
-export async function indexWallet(owner: string, { quick = false } = {}) {
+// `onProgress` fires as history pages arrive (the Temporal activity uses it to heartbeat).
+export async function indexWallet(owner: string, { quick = false, onProgress }: { quick?: boolean; onProgress?: (detail: string) => void } = {}) {
+  const jupiter = connectors.jupiter;
   // Each history page is one request and Jupiter's free plan allows ~1 request/second, so a first visit stays small.
   const maxHistory = quick ? 200 : 5000;
   const maxEventFetch = quick ? 2 : 20;
-  const p = await jup<Profile>(`/profiles/${owner}`);
+  const p = await jupiter.profile(owner);
   await sql`insert into profiles ${sql({
     owner,
     realized_pnl_usd: usd(p.realizedPnlUsd), volume_usd: usd(p.totalVolumeUsd),
@@ -21,7 +24,7 @@ export async function indexWallet(owner: string, { quick = false } = {}) {
     predictions = excluded.predictions, correct = excluded.correct, wrong = excluded.wrong,
     positions_value_usd = excluded.positions_value_usd, fetched_at = now()`;
 
-  const positions = await jupAll<Position>("/positions", { ownerPubkey: owner });
+  const positions = await jupiter.positions(owner);
   const posRows = positions.map((x) => ({
     pubkey: x.pubkey, owner, market_id: x.marketId, event_id: x.eventId, is_yes: x.isYes,
     contracts: num(x.contractsDecimal), cost_usd: usd(x.totalCostUsd), value_usd: usd(x.valueUsd),
@@ -35,7 +38,7 @@ export async function indexWallet(owner: string, { quick = false } = {}) {
   });
 
   // Cap very active (bot) wallets; profile totals still come from Jupiter.
-  const history = await jupAll<HistoryItem>("/history", { ownerPubkey: owner }, 200, maxHistory);
+  const history = await jupiter.history(owner, maxHistory, async (_page, fetched) => onProgress?.(`history ${fetched}`));
   // Pages can overlap when new events arrive mid-crawl, so de-duplicate by id.
   const hRows = [...new Map(history.map((h) => [h.id, h])).values()].map((h) => ({
     id: h.id, owner, event_type: h.eventType, signature: h.signature, slot: num(h.slot), ts: ts(h.timestamp),
@@ -57,7 +60,7 @@ export async function indexWallet(owner: string, { quick = false } = {}) {
     where event_id is not null and not exists (select 1 from events e where e.event_id = x.event_id)`;
   for (const { event_id } of missing.slice(0, maxEventFetch)) {
     try {
-      await saveEvents([await jup<JEvent>(`/events/${encodeURIComponent(event_id)}`, { includeMarkets: true })]);
+      await saveEvents([await jupiter.event(event_id)]);
     } catch {
       // Some old events are no longer served; they stay under "Other".
     }
