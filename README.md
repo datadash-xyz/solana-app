@@ -67,7 +67,7 @@ ROI, win-rate and profit-factor rankings need at least 5 closed positions, so on
 **Requirements:** Node 20+, a Postgres database ([Neon](https://neon.tech) free tier works), a [Jupiter API key](https://developers.jup.ag/portal) (free) and a [Helius API key](https://dashboard.helius.dev) (free).
 
 ```bash
-git clone <this repo> && cd datadash-solana
+git clone https://github.com/Rini-Tikki/datadash-solana.git && cd datadash-solana
 npm install
 cp .env.example .env   # fill in DATABASE_URL, JUPITER_API_KEY, HELIUS_API_KEY
 npm run db:migrate
