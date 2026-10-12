@@ -121,6 +121,10 @@ Optional: `npx tsx scripts/seed-polymarket-snapshot.mts` loads the Polymarket sm
 - **New in this repo (built Oct 6–12, 2026):** everything here. That covers the Jupiter indexer, on-chain verification, category leaderboards, trader pages, activity feed, markets and "same market, two chains" views, and wallet connect.
 - **Pre-existing:** [Datadash](https://datadash.xyz) itself, our Polymarket analytics product (leaderboards, trader portfolios, Smart Money, Signals, Cohorts, Alerts and the Datadash MCP), which existed before the hackathon. This repo reuses its product design and, for the Polymarket comparison only, its smart-money data.
 
+## License
+
+[MIT](LICENSE)
+
 ## Credits
 
 Data from the [Jupiter Prediction API](https://developers.jup.ag/docs/prediction). Solana RPC by [Helius](https://helius.dev). Polymarket smart money from [Datadash](https://datadash.xyz).
