@@ -1,4 +1,4 @@
-module github.com/datadash-xyz/solana-app/services/solana-verifier
+module github.com/datadash-xyz/solana-hyperliquid-integration/services/solana-verifier
 
 go 1.24.0
 

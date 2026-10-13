@@ -6,7 +6,7 @@ import (
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 
-	"github.com/datadash-xyz/solana-app/services/solana-verifier/internal/solana"
+	"github.com/datadash-xyz/solana-hyperliquid-integration/services/solana-verifier/internal/solana"
 )
 
 // TaskQueue is the queue the worker polls.

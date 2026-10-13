@@ -5,7 +5,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/datadash-xyz/solana-app/services/solana-verifier/internal/solana"
+	"github.com/datadash-xyz/solana-hyperliquid-integration/services/solana-verifier/internal/solana"
 )
 
 // Result is the on-chain status of one transaction signature.

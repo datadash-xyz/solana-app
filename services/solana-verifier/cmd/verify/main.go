@@ -17,9 +17,9 @@ import (
 
 	"go.temporal.io/sdk/client"
 
-	"github.com/datadash-xyz/solana-app/services/solana-verifier/internal/solana"
-	"github.com/datadash-xyz/solana-app/services/solana-verifier/internal/temporalx"
-	"github.com/datadash-xyz/solana-app/services/solana-verifier/internal/verifier"
+	"github.com/datadash-xyz/solana-hyperliquid-integration/services/solana-verifier/internal/solana"
+	"github.com/datadash-xyz/solana-hyperliquid-integration/services/solana-verifier/internal/temporalx"
+	"github.com/datadash-xyz/solana-hyperliquid-integration/services/solana-verifier/internal/verifier"
 )
 
 func main() {
